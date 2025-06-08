@@ -1,8 +1,8 @@
 const chatBox = document.getElementById('chat-box');
 const userInput = document.getElementById('user-input');
 const sendButton = document.getElementById('send-button');
-const adminIcon = document.getElementById('admin-icon'); // Get the settings icon element
-const resetChatIcon = document.getElementById('reset-chat-icon'); // Get the reset icon element
+const adminIcon = document.getElementById('admin-icon');
+const resetChatIcon = document.getElementById('reset-chat-icon');
 const switchGPT = document.getElementById('switch-gpt');
 const switchLuna = document.getElementById('switch-luna');
 
@@ -62,7 +62,6 @@ function removeStyleChatHistory(styleId) {
         localStorage.removeItem('chat_history_' + styleId);
     } catch {}
 }
-
 
 // Settings Modal Elements
 const settingsModal = document.getElementById('settings-modal');
@@ -219,6 +218,7 @@ function assignApiKeyToStyle(styleId, keyName) {
         if (activeStyle === styleId) {
             openaiApiKey = found.key;
             saveAPIKeyLocally(found.key);
+            loadStyleContext(); // Fuerza recarga de chat con la Key asignada
         }
     }
 }
@@ -248,7 +248,7 @@ settingsModal.addEventListener('click', (e) => {
 addApikeyForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = apikeyNameInput.value.trim();
-    const key = apikeyValueInput.value.trim();
+    const key = apikeyValueInput.value.trim().replace(/\s/g, "");
     if (!name || !key) {
         settingsError.textContent = 'Both fields are required.';
         return;
@@ -264,10 +264,11 @@ addApikeyForm.addEventListener('submit', (e) => {
     }
     all.push({ name, key });
     saveAllApiKeys(all);
-    setSelectedApiKeyName(name);
+    setStyleApiKey(activeStyle, key); // Asigna la key al estilo activo automáticamente
     openaiApiKey = key;
     saveAPIKeyLocally(key);
     renderApiKeyList();
+    loadStyleContext(); // Recarga el chat automáticamente
     apikeyNameInput.value = '';
     apikeyValueInput.value = '';
     settingsError.textContent = '';
@@ -440,26 +441,20 @@ addContextForm.addEventListener('submit', e => {
     renderContextList();
 });
 
-
-
 let conversationHistory = [];
-// --- Chat History Persistence (deprecado: usar por estilo) ---
 function saveChatHistoryLocally(history) {}
 function getChatHistoryLocally() { return []; }
 function removeChatHistoryLocally() {}
-// --- END Chat History Persistence ---
 let isLoading = false;
 let openaiApiKey = null;
 
 function getActiveSystemMessage() {
-    // Si hay contexto asignado al estilo, úsalo; si no, usa el default
     const ctxText = getStyleContextText(activeStyle);
     return {
         role: "system",
         content: ctxText || "You are a helpful and friendly AI assistant. Strive for clarity and conciseness. You are on a mobile-friendly chat interface."
     };
 }
-
 
 /* API Key Panel Logic */
 const apikeyPanel = document.getElementById('apikey-panel');
@@ -486,29 +481,23 @@ function removeAPIKeyLocally() {
 
 function showAPIKeyPanel(show) {
     apikeyPanel.style.display = show ? 'flex' : 'none';
-    // When showing the panel, hide the chat; otherwise, show chat (it might be hidden by panel initially)
-    chatContainer.style.display = show ? 'none' : 'flex'; // Use flex for chat-container layout
-
+    chatContainer.style.display = show ? 'none' : 'flex';
     if (show) {
-        apikeyInput.value = ''; // Clear the input when showing the panel
-        apikeyError.textContent = ''; // Clear any previous errors
+        apikeyInput.value = '';
+        apikeyError.textContent = '';
         setTimeout(() => apikeyInput.focus(), 120);
     }
 }
 
 function validateAPIKeyFormat(key) {
-    // Allow both "sk-" and "OPENAI_API_KEY-" style keys, as newer orgs have "OPENAI_API_KEY-" prefixes
-    // Most OpenAI keys start with "sk-", are about 48 chars. However, some may be longer!
-    // Let's be more permissive but still sane.
-    const trimmed = key.trim();
-    // Accepts: sk-XXX...   or   OPENAI_API_KEY-XXX..., at least 20 chars after prefix
+    const trimmed = key.trim().replace(/\s/g, "");
     if (/^(sk-|OPENAI_API_KEY-)[A-Za-z0-9_-]{20,}$/.test(trimmed)) {
         return true;
     }
     return false;
 }
 apikeySaveBtn.addEventListener('click', () => {
-    const key = apikeyInput.value.trim();
+    const key = apikeyInput.value.trim().replace(/\s/g, "");
     apikeyError.textContent = '';
     if (!validateAPIKeyFormat(key)) {
         apikeyError.textContent = 'Please enter a valid OpenAI API key (it should start with "sk-" or "OPENAI_API_KEY-").';
@@ -516,16 +505,14 @@ apikeySaveBtn.addEventListener('click', () => {
     }
     openaiApiKey = key;
     saveAPIKeyLocally(key);
+    setStyleApiKey(activeStyle, key); // Asigna directa
+    loadStyleContext(); // Recarga el chat automáticamente
     showAPIKeyPanel(false);
     resetChatToWelcome();
 });
 apikeyInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') apikeySaveBtn.click();
 });
-
-// Admin icon click handler is ahora solo para abrir el modal (ver arriba)
-// El cambio de API Key ahora se hace desde el modal
-
 
 // Reset chat icon handler to just restart conversation (keep API key)
 resetChatIcon.addEventListener('click', () => {
@@ -537,7 +524,6 @@ function resetChatToWelcome() {
     chatBox.innerHTML = '';
     conversationHistory = [];
     removeStyleChatHistory(activeStyle);
-    // Usa el contexto asignado como mensaje de bienvenida
     const sysMsg = getActiveSystemMessage();
     addMessageToChat(sysMsg.content, 'ai');
     saveStyleChatHistory(activeStyle, conversationHistory);
@@ -553,16 +539,14 @@ function addMessageToChat(text, sender, isHtml = false) {
         messageElement.textContent = text;
     }
     chatBox.appendChild(messageElement);
-    chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to bottom
+    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function showLoadingIndicator() {
     isLoading = true;
     sendButton.disabled = true;
     userInput.disabled = true;
-    // Add a placeholder message with loading animation
     addMessageToChat('<div class="loading-dots"><span></span><span></span><span></span></div>', 'ai', true);
-    // The last message element is the loading indicator
     chatBox.lastElementChild.classList.add('loading-indicator');
 }
 
@@ -579,7 +563,7 @@ function removeLoadingIndicator() {
 
 async function handleSendMessage() {
     const userText = userInput.value.trim();
-    if (userText === '' || isLoading || !openaiApiKey) { // Also check for API key
+    if (userText === '' || isLoading || !openaiApiKey) {
         return;
     }
     addMessageToChat(userText, 'user');
@@ -592,7 +576,8 @@ async function handleSendMessage() {
     conversationHistory.push(newUserMessage);
     saveStyleChatHistory(activeStyle, conversationHistory);
 
-    // Keep conversation history for API to a reasonable length (e.g., last 10 messages + system message)
+    const systemMessage = getActiveSystemMessage();
+
     const messagesToSend = [
         systemMessage,
         ...conversationHistory.slice(-10)
@@ -607,21 +592,15 @@ async function handleSendMessage() {
         conversationHistory.push({ role: 'assistant', content: aiResponseText });
         saveStyleChatHistory(activeStyle, conversationHistory);
 
-        // Trim client-side history if it gets too long (e.g. last 20 exchanges)
         if (conversationHistory.length > 20) {
             conversationHistory = conversationHistory.slice(-20);
             saveStyleChatHistory(activeStyle, conversationHistory);
         }
-
     } catch (error) {
         removeLoadingIndicator();
-        // Check if error is due to no API key and show panel if so
-        if (error.message.includes("No API key set") || error.message.includes("Invalid or unauthorized API key")) {
-            addMessageToChat("Your API key seems invalid or expired. Please re-enter it.", 'ai');
-            showAPIKeyPanel(true);
-        } else {
-            addMessageToChat("Sorry, I couldn't contact OpenAI. Error: " + error.message, 'ai');
-        }
+        let mensaje = "Error al contactar OpenAI: " + (error.message || error);
+        addMessageToChat(mensaje, 'ai');
+        showAPIKeyPanel(true);
     }
 }
 
@@ -633,12 +612,6 @@ userInput.addEventListener('keypress', (event) => {
     }
 });
 
-// No longer needed as disabled state is handled by isLoading / openaiApiKey check
-// function setDisabledChat(disabled) {
-//     sendButton.disabled = disabled;
-//     userInput.disabled = disabled;
-// }
-
 /**
  * Fetch chat completion from OpenAI API using /v1/chat/completions
  * @param {*} messages array of {role, content}
@@ -649,7 +622,7 @@ async function fetchOpenAIChatResponse(messages) {
 
     const endpoint = "https://api.openai.com/v1/chat/completions";
     const body = {
-        model: "gpt-3.5-turbo", // Using a commonly available model
+        model: "gpt-3.5-turbo",
         messages,
         temperature: 0.7,
         stream: false
@@ -663,19 +636,18 @@ async function fetchOpenAIChatResponse(messages) {
         body: JSON.stringify(body)
     });
     if (!res.ok) {
-        let errorDetail = await res.text(); // Get raw error response
+        let errorDetail = await res.text();
         let errMsg = `API error ${res.status}: ${errorDetail}`;
         try {
             const errorJson = JSON.parse(errorDetail);
             if (errorJson.error && errorJson.error.message) {
-                 errMsg = `API error: ${errorJson.error.message}`;
+                errMsg = `API error: ${errorJson.error.message}`;
             } else if (res.status === 401) {
-                 errMsg = "Invalid or unauthorized API key. Please check and re-enter.";
+                errMsg = "Invalid or unauthorized API key. Please check and re-enter.";
             }
         } catch (e) {
-            // ignore parsing errors, use raw text
             if (res.status === 401) {
-                 errMsg = "Invalid or unauthorized API key. Please check and re-enter.";
+                errMsg = "Invalid or unauthorized API key. Please check and re-enter.";
             }
         }
 
@@ -684,8 +656,8 @@ async function fetchOpenAIChatResponse(messages) {
     const data = await res.json();
     if (data.error) throw new Error(data.error.message || "API error");
     return data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
-      ? data.choices[0].message.content.trim()
-      : '[No response]';
+        ? data.choices[0].message.content.trim()
+        : '[No response]';
 }
 
 /* On Page Load: restore API key if present, otherwise show panel */
@@ -695,9 +667,7 @@ window.addEventListener('load', () => {
 });
 
 function loadStyleContext() {
-    // Cargar API Key para el estilo activo
     openaiApiKey = getStyleApiKey(activeStyle);
-    // Si no hay key válida, mostrar mensaje en el chat y NO mostrar el panel
     if (!openaiApiKey || !validateAPIKeyFormat(openaiApiKey)) {
         showAPIKeyPanel(false);
         chatBox.innerHTML = '';
@@ -706,7 +676,6 @@ function loadStyleContext() {
         return;
     }
     showAPIKeyPanel(false);
-    // Cargar historial para el estilo activo
     conversationHistory = getStyleChatHistory(activeStyle);
     chatBox.innerHTML = '';
     if (conversationHistory.length > 0) {
